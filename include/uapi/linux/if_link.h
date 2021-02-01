@@ -904,13 +904,14 @@ enum {
 	IFLA_VF_IB_PORT_GUID,	/* VF Infiniband port GUID */
 	IFLA_VF_VLAN_LIST,	/* nested list of vlans, option for QinQ */
 	IFLA_VF_BROADCAST,	/* VF broadcast */
+	IFLA_VF_MIRROR,
 	__IFLA_VF_MAX,
 };
 
 #define IFLA_VF_MAX (__IFLA_VF_MAX - 1)
 
 struct ifla_vf_mac {
-	__u32 vf;
+i	__u32 vf;
 	__u8 mac[32]; /* MAX_ADDR_LEN */
 };
 
@@ -996,6 +997,30 @@ enum {
 struct ifla_vf_trust {
 	__u32 vf;
 	__u32 setting;
+};
+
+/* Mirroring section
+ *     Nested layout
+ *         [IFLA_VF_MIRROR]
+ *             [IFLA_VF_MIRROR_PF]
+ *             [IFLA_VF_MIRROR_VF]
+ *             [IFLA_VF_MIRROR_VLAN]
+ */
+
+enum {
+	IFLA_VF_MIRROR_PF,
+	IFLA_VF_MIRROR_VF,
+	IFLA_VF_MIRROR_VLAN,
+};
+
+struct ifla_vf_mirror_vf {
+	__u32 vf;
+	__u32 src_vf;
+};
+
+struct ifla_vf_mirror_vlan {
+	__u32 vf;
+	__u32 vlan;
 };
 
 /* VF ports management section
