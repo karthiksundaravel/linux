@@ -911,7 +911,7 @@ enum {
 #define IFLA_VF_MAX (__IFLA_VF_MAX - 1)
 
 struct ifla_vf_mac {
-i	__u32 vf;
+	__u32 vf;
 	__u8 mac[32]; /* MAX_ADDR_LEN */
 };
 
