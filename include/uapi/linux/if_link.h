@@ -904,6 +904,7 @@ enum {
 	IFLA_VF_IB_PORT_GUID,	/* VF Infiniband port GUID */
 	IFLA_VF_VLAN_LIST,	/* nested list of vlans, option for QinQ */
 	IFLA_VF_BROADCAST,	/* VF broadcast */
+	IFLA_VF_MIRROR,
 	__IFLA_VF_MAX,
 };
 
@@ -996,6 +997,19 @@ enum {
 struct ifla_vf_trust {
 	__u32 vf;
 	__u32 setting;
+};
+
+
+enum {
+	PORT_MIRROR_SRC_PF,
+	PORT_MIRROR_SRC_VF,
+	PORT_MIRROR_SRC_VLAN,
+}
+
+struct ifla_vf_mirror {
+	__u32 vf;
+	__u32 src_type;
+	__u32 src_id;
 };
 
 /* VF ports management section

@@ -2487,6 +2487,28 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 		return handle_vf_guid(dev, ivt, IFLA_VF_IB_PORT_GUID);
 	}
 
+	if (tb[IFLA_VF_MIRROR]) {
+		struct ifla_vf_mirror *ivm = nla_data(tb[IFLA_VF_MIRROR]);
+
+		if (ivm->vf >= INT_MAX)
+			return -EINVAL;
+		err = -EOPNOTSUPP;
+		if (ivm->src_type == PORT_MIRROR_SRC_PF) {
+			if (ops->ndo_set_vf_mirror_pf)
+				err = ops->ndo_set_vf_mirror_pf(dev, ivm->vf);
+		} else if (ivm->src_type == PORT_MIRROR_SRC_VF) {
+			if (ops->ndo_set_vf_mirror_vf)
+				err = ops->ndo_set_vf_mirror_vf(dev, ivm->vf, ivm->src_id);
+		} else if (ivm->src_type == PORT_MIRROR_SRC_VLAN) {
+			if (ops->ndo_set_vf_mirror_vlan)
+				err = ops->ndo_set_vf_mirror_vf(dev, ivm->vf, ivm->src_id);
+		} else {
+			return -EINVAL;
+		}
+		if (err < 0)
+			return err;
+	}
+
 	return err;
 }
 
