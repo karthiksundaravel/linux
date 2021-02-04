@@ -948,7 +948,8 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 /* IFLA_VF_STATS_TX_DROPPED */
 			 nla_total_size_64bit(sizeof(__u64)) +
-			 nla_total_size(sizeof(struct ifla_vf_trust)));
+			 nla_total_size(sizeof(struct ifla_vf_trust)) +
+			 nla_total_size(sizeof(struct ifla_vf_mirror)));
 		return size;
 	} else
 		return 0;
@@ -1240,6 +1241,7 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	struct ifla_vf_info ivi;
 	struct ifla_vf_guid node_guid;
 	struct ifla_vf_guid port_guid;
+	struct ifla_vf_mirror vf_mirror;
 
 	memset(&ivi, 0, sizeof(ivi));
 
@@ -1251,6 +1253,7 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	ivi.spoofchk = -1;
 	ivi.rss_query_en = -1;
 	ivi.trusted = -1;
+	vf_mirror.src_id = -1;
 	/* The default value for VF link state is "auto"
 	 * IFLA_VF_LINK_STATE_AUTO which equals zero
 	 */
@@ -1274,7 +1277,8 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		vf_rss_query_en.vf =
 		vf_trust.vf =
 		node_guid.vf =
-		port_guid.vf = ivi.vf;
+		port_guid.vf =
+		vf_mirror.vf = ivi.vf;
 
 	memcpy(vf_mac.mac, ivi.mac, sizeof(ivi.mac));
 	memcpy(vf_broadcast.broadcast, dev->broadcast, dev->addr_len);
@@ -1290,6 +1294,9 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	vf_linkstate.link_state = ivi.linkstate;
 	vf_rss_query_en.setting = ivi.rss_query_en;
 	vf_trust.setting = ivi.trusted;
+	vf_mirror.src_type = ivi.mirror_src_type;
+	if (ivi.mirror_src_type != PORT_MIRROR_SRC_PF)
+		vf_mirror.src_id = ivi.mirror_src_id;
 	vf = nla_nest_start_noflag(skb, IFLA_VF_INFO);
 	if (!vf)
 		goto nla_put_vfinfo_failure;
@@ -1308,7 +1315,8 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		    sizeof(vf_rss_query_en),
 		    &vf_rss_query_en) ||
 	    nla_put(skb, IFLA_VF_TRUST,
-		    sizeof(vf_trust), &vf_trust))
+		    sizeof(vf_trust), &vf_trust) ||
+	    nla_put(skb, IFLA_VF_MIRROR, sizeof(vf_mirror), &vf_mirror))
 		goto nla_put_vf_failure;
 
 	if (dev->netdev_ops->ndo_get_vf_guid &&
@@ -1900,6 +1908,7 @@ static const struct nla_policy ifla_vf_policy[IFLA_VF_MAX+1] = {
 	[IFLA_VF_TRUST]		= { .len = sizeof(struct ifla_vf_trust) },
 	[IFLA_VF_IB_NODE_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
 	[IFLA_VF_IB_PORT_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
+	[IFLA_VF_MIRROR]	= { .len = sizeof(struct ifla_vf_mirror) },
 };
 
 static const struct nla_policy ifla_port_policy[IFLA_PORT_MAX+1] = {

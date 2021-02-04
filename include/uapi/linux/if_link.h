@@ -999,8 +999,8 @@ struct ifla_vf_trust {
 	__u32 setting;
 };
 
-
 enum {
+	PORT_MIRROR_SRC_NONE,
 	PORT_MIRROR_SRC_PF,
 	PORT_MIRROR_SRC_VF,
 	PORT_MIRROR_SRC_VLAN,
