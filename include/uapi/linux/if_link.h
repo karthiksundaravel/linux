@@ -1004,7 +1004,7 @@ enum {
 	PORT_MIRROR_SRC_PF,
 	PORT_MIRROR_SRC_VF,
 	PORT_MIRROR_SRC_VLAN,
-}
+};
 
 struct ifla_vf_mirror {
 	__u32 vf;

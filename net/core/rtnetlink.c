@@ -1254,6 +1254,7 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	ivi.rss_query_en = -1;
 	ivi.trusted = -1;
 	vf_mirror.src_id = -1;
+	vf_mirror.src_type = 0;
 	/* The default value for VF link state is "auto"
 	 * IFLA_VF_LINK_STATE_AUTO which equals zero
 	 */
@@ -2502,20 +2503,38 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 		if (ivm->vf >= INT_MAX)
 			return -EINVAL;
 		err = -EOPNOTSUPP;
+		printk("Source identifier : %u, dest vm: %u\n", ivm->src_id,ivm->vf);
 		if (ivm->src_type == PORT_MIRROR_SRC_PF) {
-			if (ops->ndo_set_vf_mirror_pf)
+			printk("checkpoint vf_mirror_pf 1\n");
+			if (ops->ndo_set_vf_mirror_pf){
+				printk("checkpoint vf_mirror_pf 2\n");
 				err = ops->ndo_set_vf_mirror_pf(dev, ivm->vf);
+			}
 		} else if (ivm->src_type == PORT_MIRROR_SRC_VF) {
-			if (ops->ndo_set_vf_mirror_vf)
+			if (ivm->src_id >= INT_MAX)
+				return -EINVAL;
+			printk("checkpoint vf_mirror_vf 1\n");
+			if (ops->ndo_set_vf_mirror_vf){
+				printk("checkpoint vf_mirror_vf 2\n");
 				err = ops->ndo_set_vf_mirror_vf(dev, ivm->vf, ivm->src_id);
+			}
 		} else if (ivm->src_type == PORT_MIRROR_SRC_VLAN) {
-			if (ops->ndo_set_vf_mirror_vlan)
-				err = ops->ndo_set_vf_mirror_vf(dev, ivm->vf, ivm->src_id);
+			printk("checkpoint vf_mirror_vlan 1\n");
+			if (ops->ndo_set_vf_mirror_vlan){
+				printk("checkpoint vf_mirror_vlan 2\n");
+				err = ops->ndo_set_vf_mirror_vlan(dev, ivm->vf, ivm->src_id);
+			}
+		} else if (ivm->src_type == PORT_MIRROR_SRC_NONE){
+			printk("Port mirror none\n");
+			err = 0;
 		} else {
+			printk("error einval\n");
 			return -EINVAL;
 		}
-		if (err < 0)
+		if (err < 0){
+			printk("error %d\n",err);
 			return err;
+		}
 	}
 
 	return err;
