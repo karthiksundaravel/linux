@@ -2511,8 +2511,6 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 				err = ops->ndo_set_vf_mirror_pf(dev, ivm->vf);
 			}
 		} else if (ivm->src_type == PORT_MIRROR_SRC_VF) {
-			if (ivm->src_id >= INT_MAX)
-				return -EINVAL;
 			printk("checkpoint vf_mirror_vf 1\n");
 			if (ops->ndo_set_vf_mirror_vf){
 				printk("checkpoint vf_mirror_vf 2\n");
@@ -2526,6 +2524,10 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 			}
 		} else if (ivm->src_type == PORT_MIRROR_SRC_NONE){
 			printk("Port mirror none\n");
+			if(ops->ndo_rem_mirror){
+				printk("removing mirror\n");
+				err = ops->ndo_rem_mirror(dev,ivm->vf,-1);
+			}
 			err = 0;
 		} else {
 			printk("error einval\n");

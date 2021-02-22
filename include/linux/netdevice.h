@@ -1072,6 +1072,7 @@ struct netdev_net_notifier {
  * void (*ndo_poll_controller)(struct net_device *dev);
  *
  *	SR-IOV management functions.
+ *
  * int (*ndo_set_vf_mac)(struct net_device *dev, int vf, u8* mac);
  * int (*ndo_set_vf_vlan)(struct net_device *dev, int vf, u16 vlan,
  *			  u8 qos, __be16 proto);
@@ -1358,6 +1359,8 @@ struct net_device_ops {
 							 int vf, int src_vf);
 	int			(*ndo_set_vf_mirror_vlan)(struct net_device *dev,
 							 int vf, u16 vlan);
+	int                     (*ndo_rem_mirror)(struct net_device *dev,
+							 int vf, int vlan);
 	int			(*ndo_get_vf_stats)(struct net_device *dev,
 						    int vf,
 						    struct ifla_vf_stats
