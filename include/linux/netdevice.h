@@ -1361,6 +1361,9 @@ struct net_device_ops {
 							 int vf, u16 vlan);
 	int                     (*ndo_rem_mirror)(struct net_device *dev,
 							 int vf, int vlan);
+	int                     (*ndo_set_vf_mirror)(struct net_device *dev,
+                                                         struct ifla_vf_mirror *ivm);
+
 	int			(*ndo_get_vf_stats)(struct net_device *dev,
 						    int vf,
 						    struct ifla_vf_stats
