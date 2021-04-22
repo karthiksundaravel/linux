@@ -948,11 +948,31 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 /* IFLA_VF_STATS_TX_DROPPED */
 			 nla_total_size_64bit(sizeof(__u64)) +
-			 nla_total_size(sizeof(struct ifla_vf_trust)) +
-			 nla_total_size(sizeof(struct ifla_vf_mirror)));
+			 nla_total_size(sizeof(struct ifla_vf_trust)));
 		return size;
 	} else
 		return 0;
+}
+
+static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, struct ifla_vf_mirror_info *ivmi)
+{
+	int err;
+	if (dev->netdev_ops->ndo_get_vf_mirror) {
+		err = dev->netdev_ops->ndo_get_vf_mirror(dev, ivmi);
+	        if (err	< 0) {
+			return err;
+		}
+		if (nla_put(skb, IFLA_VF_MIRRORINFO, sizeof(struct ifla_vf_mirror_info ), ivmi) < 0) {
+			printk("Failed to add IFLA_VF_MIRRORINFO\n");
+			return -EMSGSIZE;
+		}
+	}
+	else
+	{	
+		printk("Unsupported IFLA_VF_MIRRORINFO\n");
+		return -ENOTSUPP;
+	}
+	return 0;
 }
 
 static size_t rtnl_port_size(const struct net_device *dev,
@@ -1016,6 +1036,10 @@ static size_t rtnl_proto_down_size(const struct net_device *dev)
 static noinline size_t if_nlmsg_size(const struct net_device *dev,
 				     u32 ext_filter_mask)
 {
+#if 0
+	if (ext_filter_mask & RTEXT_FILTER_MIRROR_INFO)
+		return rtnl_vf_mirror_size(dev);  /* IFLA_VF_MIRROR */
+#endif
 	return NLMSG_ALIGN(sizeof(struct ifinfomsg))
 	       + nla_total_size(IFNAMSIZ) /* IFLA_IFNAME */
 	       + nla_total_size(IFALIASZ) /* IFLA_IFALIAS */
@@ -1063,6 +1087,16 @@ static noinline size_t if_nlmsg_size(const struct net_device *dev,
 	       + rtnl_prop_list_size(dev)
 	       + nla_total_size(MAX_ADDR_LEN) /* IFLA_PERM_ADDRESS */
 	       + 0;
+}
+
+
+static size_t rtnl_vf_mirror_size(const struct net_device *dev)
+{
+	if (!dev->dev.parent)
+		return 0;
+
+	return NLMSG_ALIGN(sizeof(struct ifinfomsg)) +
+		nla_total_size(sizeof (struct ifla_vf_mirror_info));
 }
 
 static int rtnl_vf_ports_fill(struct sk_buff *skb, struct net_device *dev)
@@ -1241,7 +1275,6 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	struct ifla_vf_info ivi;
 	struct ifla_vf_guid node_guid;
 	struct ifla_vf_guid port_guid;
-	struct ifla_vf_mirror vf_mirror;
 
 	memset(&ivi, 0, sizeof(ivi));
 
@@ -1253,8 +1286,6 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	ivi.spoofchk = -1;
 	ivi.rss_query_en = -1;
 	ivi.trusted = -1;
-	vf_mirror.src_id = -1;
-	vf_mirror.src_type = 0;
 	/* The default value for VF link state is "auto"
 	 * IFLA_VF_LINK_STATE_AUTO which equals zero
 	 */
@@ -1278,8 +1309,7 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		vf_rss_query_en.vf =
 		vf_trust.vf =
 		node_guid.vf =
-		port_guid.vf =
-		vf_mirror.vf = ivi.vf;
+		port_guid.vf = ivi.vf;
 
 	memcpy(vf_mac.mac, ivi.mac, sizeof(ivi.mac));
 	memcpy(vf_broadcast.broadcast, dev->broadcast, dev->addr_len);
@@ -1295,9 +1325,6 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 	vf_linkstate.link_state = ivi.linkstate;
 	vf_rss_query_en.setting = ivi.rss_query_en;
 	vf_trust.setting = ivi.trusted;
-	vf_mirror.src_type = ivi.mirror_src_type;
-	if (ivi.mirror_src_type != PORT_MIRROR_SRC_PF)
-		vf_mirror.src_id = ivi.mirror_src_id;
 	vf = nla_nest_start_noflag(skb, IFLA_VF_INFO);
 	if (!vf)
 		goto nla_put_vfinfo_failure;
@@ -1316,8 +1343,7 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		    sizeof(vf_rss_query_en),
 		    &vf_rss_query_en) ||
 	    nla_put(skb, IFLA_VF_TRUST,
-		    sizeof(vf_trust), &vf_trust) ||
-	    nla_put(skb, IFLA_VF_MIRROR, sizeof(vf_mirror), &vf_mirror))
+		    sizeof(vf_trust), &vf_trust))
 		goto nla_put_vf_failure;
 
 	if (dev->netdev_ops->ndo_get_vf_guid &&
@@ -1707,6 +1733,55 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
+static int rtnl_fill_mirror_ifinfo(struct sk_buff *skb,
+			    struct net_device *dev, struct net *src_net,
+			    int type, u32 pid, u32 seq, u32 change,
+			    unsigned int flags, u32 ext_filter_mask,
+			    u32 event, int *new_nsid, int new_ifindex,
+			    int tgt_netnsid, gfp_t gfp, struct ifla_vf_mirror_info *ivmi)
+{
+	struct ifinfomsg *ifm;
+	struct nlmsghdr *nlh;
+	struct nlmsgerr *msgerr;
+	int err;
+
+	ASSERT_RTNL();
+	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ifm), flags);
+	if (nlh == NULL)
+		return -EMSGSIZE;
+
+	ifm = nlmsg_data(nlh);
+	ifm->ifi_family = AF_UNSPEC;
+	ifm->__ifi_pad = 0;
+	ifm->ifi_type = dev->type;
+	ifm->ifi_index = dev->ifindex;
+	ifm->ifi_flags = dev_get_flags(dev);
+	ifm->ifi_change = change;
+
+	err = rtnl_vf_mirror_fill(skb, dev, ivmi);
+	if (err == -EAGAIN || err == -ENODATA)
+	{
+		nlmsg_cancel(skb, nlh);
+		nlh = nlmsg_put(skb, pid, seq, NLMSG_ERROR, sizeof(struct nlmsgerr), flags);
+		msgerr = nlmsg_data(nlh);
+		msgerr->error = err;
+		memset(&msgerr->msg, 0, sizeof(msgerr->msg));
+		printk("%s failed with error %d\n", __FUNCTION__,err);
+	}
+	else if (err < 0)
+	{
+		nlmsg_cancel(skb, nlh);
+		return err;
+	}
+	nlmsg_end(skb, nlh);
+	return 0;
+
+nla_put_failure:
+	nlmsg_cancel(skb, nlh);
+	return -EMSGSIZE;
+
+}
+
 static int rtnl_fill_ifinfo(struct sk_buff *skb,
 			    struct net_device *dev, struct net *src_net,
 			    int type, u32 pid, u32 seq, u32 change,
@@ -1909,7 +1984,6 @@ static const struct nla_policy ifla_vf_policy[IFLA_VF_MAX+1] = {
 	[IFLA_VF_TRUST]		= { .len = sizeof(struct ifla_vf_trust) },
 	[IFLA_VF_IB_NODE_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
 	[IFLA_VF_IB_PORT_GUID]	= { .len = sizeof(struct ifla_vf_guid) },
-	[IFLA_VF_MIRROR]	= { .len = sizeof(struct ifla_vf_mirror) },
 };
 
 static const struct nla_policy ifla_port_policy[IFLA_PORT_MAX+1] = {
@@ -2115,9 +2189,11 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 		case IFLA_LINKINFO:
 			kind_ops = linkinfo_to_kind_ops(tb[i]);
 			break;
+		case IFLA_VF_MIRRORINFO:
+			break;
 		default:
 			if (cb->strict_check) {
-				NL_SET_ERR_MSG(extack, "Unsupported attribute in link dump request");
+				NL_SET_ERR_MSG(extack, "Unsupported attribute in link dump request ");
 				return -EINVAL;
 			}
 		}
@@ -2498,19 +2574,13 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 	}
 
 	if(tb[IFLA_VF_MIRROR]){
-		struct ifla_vf_mirror *ivm = nla_data(tb[IFLA_VF_MIRROR]);
-
-                if (ivm->vf >= INT_MAX)
-                        return -EINVAL;
                 err = -EOPNOTSUPP;
-                printk("Src type: %u Source identifier : %u, dest vm: %u\n", ivm->src_type, ivm->src_id,ivm->vf);
 
 		if (ops->ndo_set_vf_mirror){
-			printk("checkpoint vf_mirror\n");
-			err = ops->ndo_set_vf_mirror(dev, ivm);
+			err = ops->ndo_set_vf_mirror(dev, tb[IFLA_VF_MIRROR]);
                 }
 		if (err < 0) {
-			printk("%s err: %d\n",__FUNCTION__, err);
+			printk("In %s () IFLA_VF_MIRROR returned err: %d\n",__FUNCTION__, err);
 			return err;
 		}
 	}
@@ -3558,6 +3628,7 @@ static int rtnl_valid_getlink_req(struct sk_buff *skb,
 		case IFLA_ALT_IFNAME:
 		case IFLA_EXT_MASK:
 		case IFLA_TARGET_NETNSID:
+		case IFLA_VF_MIRRORINFO:
 			break;
 		default:
 			NL_SET_ERR_MSG(extack, "Unsupported attribute in get link request");
@@ -3580,6 +3651,7 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 	int netnsid = -1;
 	int err;
 	u32 ext_filter_mask = 0;
+	struct ifla_vf_mirror_info *ivmi = NULL;
 
 	err = rtnl_valid_getlink_req(skb, nlh, tb, extack);
 	if (err < 0)
@@ -3598,6 +3670,9 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	if (tb[IFLA_EXT_MASK])
 		ext_filter_mask = nla_get_u32(tb[IFLA_EXT_MASK]);
+	if (tb[IFLA_VF_MIRRORINFO]) {
+		ivmi = nla_data(tb[IFLA_VF_MIRRORINFO]);
+	}
 
 	err = -EINVAL;
 	ifm = nlmsg_data(nlh);
@@ -3614,14 +3689,26 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto out;
 
 	err = -ENOBUFS;
-	nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
-	if (nskb == NULL)
-		goto out;
+	if (ivmi) {
+		nskb = nlmsg_new(rtnl_vf_mirror_size(dev), GFP_KERNEL);
+		if (nskb == NULL)
+			goto out;
+		err = rtnl_fill_mirror_ifinfo(nskb, dev, net,
+                               RTM_NEWLINK, NETLINK_CB(skb).portid,
+                               nlh->nlmsg_seq, 0, 0, ext_filter_mask,
+                               0, NULL, 0, netnsid, GFP_KERNEL, ivmi);
+		printk("KART : vf : %d, ele_index %d\n", ivmi->vf_to_vf.dst_vf, ivmi->ele_index);
+	}
+	else {
+		nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
+		if (nskb == NULL)
+			goto out;
 
-	err = rtnl_fill_ifinfo(nskb, dev, net,
+		err = rtnl_fill_ifinfo(nskb, dev, net,
 			       RTM_NEWLINK, NETLINK_CB(skb).portid,
 			       nlh->nlmsg_seq, 0, 0, ext_filter_mask,
 			       0, NULL, 0, netnsid, GFP_KERNEL);
+	}
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in if_nlmsg_size */
 		WARN_ON(err == -EMSGSIZE);
