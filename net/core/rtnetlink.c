@@ -963,13 +963,11 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, stru
 			return err;
 		}
 		if (nla_put(skb, IFLA_VF_MIRRORINFO, sizeof(struct ifla_vf_mirror_info ), ivmi) < 0) {
-			printk("Failed to add IFLA_VF_MIRRORINFO\n");
 			return -EMSGSIZE;
 		}
 	}
 	else
 	{	
-		printk("Unsupported IFLA_VF_MIRRORINFO\n");
 		return -ENOTSUPP;
 	}
 	return 0;
@@ -1759,26 +1757,13 @@ static int rtnl_fill_mirror_ifinfo(struct sk_buff *skb,
 	ifm->ifi_change = change;
 
 	err = rtnl_vf_mirror_fill(skb, dev, ivmi);
-	if (err == -EAGAIN || err == -ENODATA)
-	{
-		nlmsg_cancel(skb, nlh);
-		nlh = nlmsg_put(skb, pid, seq, NLMSG_ERROR, sizeof(struct nlmsgerr), flags);
-		msgerr = nlmsg_data(nlh);
-		msgerr->error = err;
-		memset(&msgerr->msg, 0, sizeof(msgerr->msg));
-		printk("%s failed with error %d\n", __FUNCTION__,err);
-	}
-	else if (err < 0)
+	if (err < 0)
 	{
 		nlmsg_cancel(skb, nlh);
 		return err;
 	}
 	nlmsg_end(skb, nlh);
 	return 0;
-
-nla_put_failure:
-	nlmsg_cancel(skb, nlh);
-	return -EMSGSIZE;
 
 }
 
@@ -2574,13 +2559,11 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 	}
 
 	if(tb[IFLA_VF_MIRROR]){
-                err = -EOPNOTSUPP;
-
+		err = -EOPNOTSUPP;
 		if (ops->ndo_set_vf_mirror){
 			err = ops->ndo_set_vf_mirror(dev, tb[IFLA_VF_MIRROR]);
-                }
+		}
 		if (err < 0) {
-			printk("In %s () IFLA_VF_MIRROR returned err: %d\n",__FUNCTION__, err);
 			return err;
 		}
 	}
@@ -3697,7 +3680,6 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
                                RTM_NEWLINK, NETLINK_CB(skb).portid,
                                nlh->nlmsg_seq, 0, 0, ext_filter_mask,
                                0, NULL, 0, netnsid, GFP_KERNEL, ivmi);
-		printk("KART : vf : %d, ele_index %d\n", ivmi->vf_to_vf.dst_vf, ivmi->ele_index);
 	}
 	else {
 		nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
