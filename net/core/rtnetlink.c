@@ -1759,6 +1759,7 @@ static int rtnl_fill_mirror_ifinfo(struct sk_buff *skb,
 	ifm->ifi_change = change;
 
 	err = rtnl_vf_mirror_fill(skb, dev, ivmi);
+#if 0
 	if (err == -EAGAIN || err == -ENODATA)
 	{
 		nlmsg_cancel(skb, nlh);
@@ -1773,12 +1774,15 @@ static int rtnl_fill_mirror_ifinfo(struct sk_buff *skb,
 		nlmsg_cancel(skb, nlh);
 		return err;
 	}
+#else
+	if (err < 0)
+	{
+		nlmsg_cancel(skb, nlh);
+		return err;
+	}
+#endif
 	nlmsg_end(skb, nlh);
 	return 0;
-
-nla_put_failure:
-	nlmsg_cancel(skb, nlh);
-	return -EMSGSIZE;
 
 }
 
