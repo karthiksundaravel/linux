@@ -911,6 +911,105 @@ static void copy_rtnl_link_stats(struct rtnl_link_stats *a,
 	a->rx_nohandler = b->rx_nohandler;
 }
 
+static inline int rtnl_put_vf_mirror_info(struct sk_buff *skb, struct ifla_vf_mirror_info *vf_mirror)
+{
+	switch (vf_mirror->action)
+	{
+	case IFLA_VF_MIRROR_VF:
+		if (nla_put(skb, IFLA_VF_MIRROR_VF, sizeof(struct ifla_vf_mirror_vf), &vf_mirror->vf_to_vf) < 0)
+			return -EMSGSIZE;
+		break;
+	case IFLA_VF_MIRROR_PF:
+		if (nla_put(skb, IFLA_VF_MIRROR_PF, sizeof(struct ifla_vf_mirror_pf), &vf_mirror->pf_to_vf) < 0)
+			return -EMSGSIZE;
+		break;
+	case IFLA_VF_MIRROR_VLAN:
+		if (nla_put(skb, IFLA_VF_MIRROR_VLAN, sizeof(struct ifla_vf_mirror_vlan), &vf_mirror->vlan_mirror) < 0)
+			return -EMSGSIZE;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+
+static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int vfid)
+{
+	struct ifla_vf_mirror_info vf_mirror;
+	int num_vfs = dev_num_vf(dev->dev.parent);
+	int mirror_index, err;
+	struct nlattr *vf_mirror_info;
+	const struct net_device_ops *ops = dev->netdev_ops;
+	if (!ops->ndo_get_vf_mirror)
+		return 0;
+        vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
+        if (!vf_mirror_info)
+                return -EMSGSIZE;
+
+	vf_mirror.dst_vf = vfid;
+	do
+	{
+		vf_mirror.ele_index = mirror_index;
+		err = ops->ndo_get_vf_mirror(dev, &vf_mirror);
+		if (err == 0) {
+			err = rtnl_put_vf_mirror_info(skb, &vf_mirror);
+			mirror_index++;
+		}
+		if (err == -EAGAIN) {
+			mirror_index = 0;
+			nla_nest_cancel(skb, vf_mirror_info);
+		}
+	}while (err == 0);
+	if (err != -ENODATA) {
+		nla_nest_cancel(skb, vf_mirror_info);
+		return err;
+	}
+
+	nla_nest_end(skb, vf_mirror_info);
+	return 0;
+}
+
+static inline int rtnl_vf_mirror_info_size(const struct net_device *dev)
+{
+	int vfid, mirror_index, nb_mirrors = 0;
+	int mirror_info_size;
+	struct ifla_vf_mirror_info vf_mirror;
+	int num_vfs;
+	int err;
+	const struct net_device_ops *ops = dev->netdev_ops;
+	if (!ops->ndo_get_vf_mirror)
+		return 0;
+	num_vfs = dev_num_vf(dev->dev.parent);
+	for (vfid = 0; vfid < num_vfs; vfid++)
+	{
+		mirror_index = 0;
+		vf_mirror.dst_vf = vfid;
+		do
+		{
+			vf_mirror.ele_index = mirror_index;
+			err = ops->ndo_get_vf_mirror(dev, &vf_mirror);
+			if (err == 0) {
+				mirror_index++;
+			}
+		}while (err == 0);
+		if (err == -EAGAIN) {
+			vfid = -1;
+			nb_mirrors = 0;
+		}
+		else if (err == -ENODATA) {
+			nb_mirrors += mirror_index;
+			continue;
+		}
+		else {
+			return 0;
+		}
+	}
+	mirror_info_size = nla_total_size(0); /* nest IFLA_VF_MIRROR*/
+	mirror_info_size += nb_mirrors * nla_total_size(sizeof (struct ifla_vf_mirror_vf));
+	return mirror_info_size;
+}
+
 /* All VF info */
 static inline int rtnl_vfinfo_size(const struct net_device *dev,
 				   u32 ext_filter_mask)
@@ -948,30 +1047,13 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 /* IFLA_VF_STATS_TX_DROPPED */
 			 nla_total_size_64bit(sizeof(__u64)) +
-			 nla_total_size(sizeof(struct ifla_vf_trust)));
+			 nla_total_size(sizeof(struct ifla_vf_trust)) +
+			 rtnl_vf_mirror_info_size(dev));
 		return size;
 	} else
 		return 0;
 }
 
-static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, struct ifla_vf_mirror_info *ivmi)
-{
-	int err;
-	if (dev->netdev_ops->ndo_get_vf_mirror) {
-		err = dev->netdev_ops->ndo_get_vf_mirror(dev, ivmi);
-	        if (err	< 0) {
-			return err;
-		}
-		if (nla_put(skb, IFLA_VF_MIRRORINFO, sizeof(struct ifla_vf_mirror_info ), ivmi) < 0) {
-			return -EMSGSIZE;
-		}
-	}
-	else
-	{	
-		return -ENOTSUPP;
-	}
-	return 0;
-}
 
 static size_t rtnl_port_size(const struct net_device *dev,
 			     u32 ext_filter_mask)
@@ -1034,10 +1116,6 @@ static size_t rtnl_proto_down_size(const struct net_device *dev)
 static noinline size_t if_nlmsg_size(const struct net_device *dev,
 				     u32 ext_filter_mask)
 {
-#if 0
-	if (ext_filter_mask & RTEXT_FILTER_MIRROR_INFO)
-		return rtnl_vf_mirror_size(dev);  /* IFLA_VF_MIRROR */
-#endif
 	return NLMSG_ALIGN(sizeof(struct ifinfomsg))
 	       + nla_total_size(IFNAMSIZ) /* IFLA_IFNAME */
 	       + nla_total_size(IFALIASZ) /* IFLA_IFALIAS */
@@ -1085,16 +1163,6 @@ static noinline size_t if_nlmsg_size(const struct net_device *dev,
 	       + rtnl_prop_list_size(dev)
 	       + nla_total_size(MAX_ADDR_LEN) /* IFLA_PERM_ADDRESS */
 	       + 0;
-}
-
-
-static size_t rtnl_vf_mirror_size(const struct net_device *dev)
-{
-	if (!dev->dev.parent)
-		return 0;
-
-	return NLMSG_ALIGN(sizeof(struct ifinfomsg)) +
-		nla_total_size(sizeof (struct ifla_vf_mirror_info));
 }
 
 static int rtnl_vf_ports_fill(struct sk_buff *skb, struct net_device *dev)
@@ -1389,6 +1457,8 @@ static noinline_for_stack int rtnl_fill_vfinfo(struct sk_buff *skb,
 		goto nla_put_vf_failure;
 	}
 	nla_nest_end(skb, vfstats);
+	if (rtnl_vf_mirror_fill(skb, dev, vfs_num))
+		goto nla_put_vf_failure;
 	nla_nest_end(skb, vf);
 	return 0;
 
@@ -1731,41 +1801,6 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
-static int rtnl_fill_mirror_ifinfo(struct sk_buff *skb,
-			    struct net_device *dev, struct net *src_net,
-			    int type, u32 pid, u32 seq, u32 change,
-			    unsigned int flags, u32 ext_filter_mask,
-			    u32 event, int *new_nsid, int new_ifindex,
-			    int tgt_netnsid, gfp_t gfp, struct ifla_vf_mirror_info *ivmi)
-{
-	struct ifinfomsg *ifm;
-	struct nlmsghdr *nlh;
-	struct nlmsgerr *msgerr;
-	int err;
-
-	ASSERT_RTNL();
-	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ifm), flags);
-	if (nlh == NULL)
-		return -EMSGSIZE;
-
-	ifm = nlmsg_data(nlh);
-	ifm->ifi_family = AF_UNSPEC;
-	ifm->__ifi_pad = 0;
-	ifm->ifi_type = dev->type;
-	ifm->ifi_index = dev->ifindex;
-	ifm->ifi_flags = dev_get_flags(dev);
-	ifm->ifi_change = change;
-
-	err = rtnl_vf_mirror_fill(skb, dev, ivmi);
-	if (err < 0)
-	{
-		nlmsg_cancel(skb, nlh);
-		return err;
-	}
-	nlmsg_end(skb, nlh);
-	return 0;
-
-}
 
 static int rtnl_fill_ifinfo(struct sk_buff *skb,
 			    struct net_device *dev, struct net *src_net,
@@ -2174,11 +2209,9 @@ static int rtnl_dump_ifinfo(struct sk_buff *skb, struct netlink_callback *cb)
 		case IFLA_LINKINFO:
 			kind_ops = linkinfo_to_kind_ops(tb[i]);
 			break;
-		case IFLA_VF_MIRRORINFO:
-			break;
 		default:
 			if (cb->strict_check) {
-				NL_SET_ERR_MSG(extack, "Unsupported attribute in link dump request ");
+				NL_SET_ERR_MSG(extack, "Unsupported attribute in link dump request");
 				return -EINVAL;
 			}
 		}
@@ -3611,7 +3644,6 @@ static int rtnl_valid_getlink_req(struct sk_buff *skb,
 		case IFLA_ALT_IFNAME:
 		case IFLA_EXT_MASK:
 		case IFLA_TARGET_NETNSID:
-		case IFLA_VF_MIRRORINFO:
 			break;
 		default:
 			NL_SET_ERR_MSG(extack, "Unsupported attribute in get link request");
@@ -3634,7 +3666,6 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 	int netnsid = -1;
 	int err;
 	u32 ext_filter_mask = 0;
-	struct ifla_vf_mirror_info *ivmi = NULL;
 
 	err = rtnl_valid_getlink_req(skb, nlh, tb, extack);
 	if (err < 0)
@@ -3653,9 +3684,6 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	if (tb[IFLA_EXT_MASK])
 		ext_filter_mask = nla_get_u32(tb[IFLA_EXT_MASK]);
-	if (tb[IFLA_VF_MIRRORINFO]) {
-		ivmi = nla_data(tb[IFLA_VF_MIRRORINFO]);
-	}
 
 	err = -EINVAL;
 	ifm = nlmsg_data(nlh);
@@ -3672,25 +3700,14 @@ static int rtnl_getlink(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto out;
 
 	err = -ENOBUFS;
-	if (ivmi) {
-		nskb = nlmsg_new(rtnl_vf_mirror_size(dev), GFP_KERNEL);
-		if (nskb == NULL)
-			goto out;
-		err = rtnl_fill_mirror_ifinfo(nskb, dev, net,
-                               RTM_NEWLINK, NETLINK_CB(skb).portid,
-                               nlh->nlmsg_seq, 0, 0, ext_filter_mask,
-                               0, NULL, 0, netnsid, GFP_KERNEL, ivmi);
-	}
-	else {
-		nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
-		if (nskb == NULL)
-			goto out;
+	nskb = nlmsg_new(if_nlmsg_size(dev, ext_filter_mask), GFP_KERNEL);
+	if (nskb == NULL)
+		goto out;
 
-		err = rtnl_fill_ifinfo(nskb, dev, net,
+	err = rtnl_fill_ifinfo(nskb, dev, net,
 			       RTM_NEWLINK, NETLINK_CB(skb).portid,
 			       nlh->nlmsg_seq, 0, 0, ext_filter_mask,
 			       0, NULL, 0, netnsid, GFP_KERNEL);
-	}
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in if_nlmsg_size */
 		WARN_ON(err == -EMSGSIZE);
