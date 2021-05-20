@@ -937,15 +937,14 @@ static inline int rtnl_put_vf_mirror_info(struct sk_buff *skb, struct ifla_vf_mi
 static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int vfid)
 {
 	struct ifla_vf_mirror_info vf_mirror;
-	int num_vfs = dev_num_vf(dev->dev.parent);
-	int mirror_index, err;
+	int mirror_index = 0, err;
 	struct nlattr *vf_mirror_info;
 	const struct net_device_ops *ops = dev->netdev_ops;
 	if (!ops->ndo_get_vf_mirror)
 		return 0;
-        vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
-        if (!vf_mirror_info)
-                return -EMSGSIZE;
+	vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
+	if (!vf_mirror_info)
+		return -EMSGSIZE;
 
 	vf_mirror.dst_vf = vfid;
 	do
@@ -957,8 +956,12 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int 
 			mirror_index++;
 		}
 		if (err == -EAGAIN) {
+			err = 0;
 			mirror_index = 0;
 			nla_nest_cancel(skb, vf_mirror_info);
+			vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
+			if (!vf_mirror_info)
+				return -EMSGSIZE;
 		}
 	}while (err == 0);
 	if (err != -ENODATA) {
@@ -970,7 +973,7 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int 
 	return 0;
 }
 
-static inline int rtnl_vf_mirror_info_size(const struct net_device *dev)
+static inline int rtnl_vf_mirror_info_size(struct net_device *dev)
 {
 	int vfid, mirror_index, nb_mirrors = 0;
 	int mirror_info_size;
@@ -1005,7 +1008,7 @@ static inline int rtnl_vf_mirror_info_size(const struct net_device *dev)
 			return 0;
 		}
 	}
-	mirror_info_size = nla_total_size(0); /* nest IFLA_VF_MIRROR*/
+	mirror_info_size = num_vfs * nla_total_size(0); /* nest IFLA_VF_MIRROR*/
 	mirror_info_size += nb_mirrors * nla_total_size(sizeof (struct ifla_vf_mirror_vf));
 	return mirror_info_size;
 }
@@ -1048,7 +1051,7 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 			 /* IFLA_VF_STATS_TX_DROPPED */
 			 nla_total_size_64bit(sizeof(__u64)) +
 			 nla_total_size(sizeof(struct ifla_vf_trust)) +
-			 rtnl_vf_mirror_info_size(dev));
+			 rtnl_vf_mirror_info_size((struct net_device *)dev));
 		return size;
 	} else
 		return 0;
