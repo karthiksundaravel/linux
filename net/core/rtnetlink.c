@@ -911,20 +911,26 @@ static void copy_rtnl_link_stats(struct rtnl_link_stats *a,
 	a->rx_nohandler = b->rx_nohandler;
 }
 
-static inline int rtnl_put_vf_mirror_info(struct sk_buff *skb, struct ifla_vf_mirror_info *vf_mirror)
+static int rtnl_put_vf_mirror_info(struct sk_buff *skb,
+				   struct ifla_vf_mirror_info *vf_mirror)
 {
-	switch (vf_mirror->action)
-	{
+	switch (vf_mirror->action) {
 	case IFLA_VF_MIRROR_VF:
-		if (nla_put(skb, IFLA_VF_MIRROR_VF, sizeof(struct ifla_vf_mirror_vf), &vf_mirror->vf_to_vf) < 0)
+		if (nla_put(skb, IFLA_VF_MIRROR_VF,
+			    sizeof(struct ifla_vf_mirror_vf),
+			    &vf_mirror->vf_to_vf) < 0)
 			return -EMSGSIZE;
 		break;
 	case IFLA_VF_MIRROR_PF:
-		if (nla_put(skb, IFLA_VF_MIRROR_PF, sizeof(struct ifla_vf_mirror_pf), &vf_mirror->pf_to_vf) < 0)
+		if (nla_put(skb, IFLA_VF_MIRROR_PF,
+			    sizeof(struct ifla_vf_mirror_pf),
+			    &vf_mirror->pf_to_vf) < 0)
 			return -EMSGSIZE;
 		break;
 	case IFLA_VF_MIRROR_VLAN:
-		if (nla_put(skb, IFLA_VF_MIRROR_VLAN, sizeof(struct ifla_vf_mirror_vlan), &vf_mirror->vlan_mirror) < 0)
+		if (nla_put(skb, IFLA_VF_MIRROR_VLAN,
+			    sizeof(struct ifla_vf_mirror_vlan),
+			    &vf_mirror->vlan_mirror) < 0)
 			return -EMSGSIZE;
 		break;
 	default:
@@ -934,7 +940,9 @@ static inline int rtnl_put_vf_mirror_info(struct sk_buff *skb, struct ifla_vf_mi
 }
 
 
-static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int vfid)
+static int rtnl_vf_mirror_fill(struct sk_buff *skb,
+			       struct net_device *dev,
+			       int vfid)
 {
 	struct ifla_vf_mirror_info vf_mirror;
 	int mirror_index = 0, err;
@@ -947,8 +955,7 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int 
 		return -EMSGSIZE;
 
 	vf_mirror.dst_vf = vfid;
-	do
-	{
+	do {
 		vf_mirror.ele_index = mirror_index;
 		err = ops->ndo_get_vf_mirror(dev, &vf_mirror);
 		if (err == 0) {
@@ -959,11 +966,13 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb, struct net_device *dev, int 
 			err = 0;
 			mirror_index = 0;
 			nla_nest_cancel(skb, vf_mirror_info);
-			vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
+			vf_mirror_info = nla_nest_start_noflag(skb,
+							       IFLA_VF_MIRROR);
 			if (!vf_mirror_info)
 				return -EMSGSIZE;
 		}
-	}while (err == 0);
+	} while (err == 0);
+
 	if (err != -ENODATA) {
 		nla_nest_cancel(skb, vf_mirror_info);
 		return err;
@@ -983,33 +992,34 @@ static inline int rtnl_vf_mirror_info_size(struct net_device *dev)
 	const struct net_device_ops *ops = dev->netdev_ops;
 	if (!ops->ndo_get_vf_mirror)
 		return 0;
+
 	num_vfs = dev_num_vf(dev->dev.parent);
-	for (vfid = 0; vfid < num_vfs; vfid++)
-	{
+	for (vfid = 0; vfid < num_vfs; vfid++) {
 		mirror_index = 0;
 		vf_mirror.dst_vf = vfid;
-		do
-		{
+		do {
 			vf_mirror.ele_index = mirror_index;
 			err = ops->ndo_get_vf_mirror(dev, &vf_mirror);
-			if (err == 0) {
+			if (err == 0)
 				mirror_index++;
-			}
-		}while (err == 0);
+		} while (err == 0);
 		if (err == -EAGAIN) {
 			vfid = -1;
 			nb_mirrors = 0;
 		}
 		else if (err == -ENODATA) {
 			nb_mirrors += mirror_index;
-			continue;
 		}
 		else {
 			return 0;
 		}
 	}
-	mirror_info_size = num_vfs * nla_total_size(0); /* nest IFLA_VF_MIRROR*/
-	mirror_info_size += nb_mirrors * nla_total_size(sizeof (struct ifla_vf_mirror_vf));
+
+	/* nest IFLA_VF_MIRROR for each VF*/
+	mirror_info_size = num_vfs * nla_total_size(0);
+
+	mirror_info_size += nb_mirrors *
+			    nla_total_size(sizeof (struct ifla_vf_mirror_vf));
 	return mirror_info_size;
 }
 
@@ -2596,12 +2606,10 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 
 	if(tb[IFLA_VF_MIRROR]){
 		err = -EOPNOTSUPP;
-		if (ops->ndo_set_vf_mirror){
+		if (ops->ndo_set_vf_mirror)
 			err = ops->ndo_set_vf_mirror(dev, tb[IFLA_VF_MIRROR]);
-		}
-		if (err < 0) {
+		if (err < 0)
 			return err;
-		}
 	}
 	return err;
 }
