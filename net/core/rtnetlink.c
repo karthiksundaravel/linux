@@ -939,7 +939,6 @@ static int rtnl_put_vf_mirror_info(struct sk_buff *skb,
 	return 0;
 }
 
-
 static int rtnl_vf_mirror_fill(struct sk_buff *skb,
 			       struct net_device *dev,
 			       int vfid)
@@ -948,6 +947,7 @@ static int rtnl_vf_mirror_fill(struct sk_buff *skb,
 	int mirror_index = 0, err;
 	struct nlattr *vf_mirror_info;
 	const struct net_device_ops *ops = dev->netdev_ops;
+
 	if (!ops->ndo_get_vf_mirror)
 		return 0;
 	vf_mirror_info = nla_nest_start_noflag(skb, IFLA_VF_MIRROR);
@@ -990,6 +990,7 @@ static inline int rtnl_vf_mirror_info_size(struct net_device *dev)
 	int num_vfs;
 	int err;
 	const struct net_device_ops *ops = dev->netdev_ops;
+
 	if (!ops->ndo_get_vf_mirror)
 		return 0;
 
@@ -1006,11 +1007,9 @@ static inline int rtnl_vf_mirror_info_size(struct net_device *dev)
 		if (err == -EAGAIN) {
 			vfid = -1;
 			nb_mirrors = 0;
-		}
-		else if (err == -ENODATA) {
+		} else if (err == -ENODATA) {
 			nb_mirrors += mirror_index;
-		}
-		else {
+		} else {
 			return 0;
 		}
 	}
@@ -1019,7 +1018,7 @@ static inline int rtnl_vf_mirror_info_size(struct net_device *dev)
 	mirror_info_size = num_vfs * nla_total_size(0);
 
 	mirror_info_size += nb_mirrors *
-			    nla_total_size(sizeof (struct ifla_vf_mirror_vf));
+			    nla_total_size(sizeof(struct ifla_vf_mirror_vf));
 	return mirror_info_size;
 }
 
@@ -1066,7 +1065,6 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev,
 	} else
 		return 0;
 }
-
 
 static size_t rtnl_port_size(const struct net_device *dev,
 			     u32 ext_filter_mask)
@@ -1813,7 +1811,6 @@ static int rtnl_fill_proto_down(struct sk_buff *skb,
 nla_put_failure:
 	return -EMSGSIZE;
 }
-
 
 static int rtnl_fill_ifinfo(struct sk_buff *skb,
 			    struct net_device *dev, struct net *src_net,
@@ -2604,7 +2601,7 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr **tb)
 		return handle_vf_guid(dev, ivt, IFLA_VF_IB_PORT_GUID);
 	}
 
-	if(tb[IFLA_VF_MIRROR]){
+	if (tb[IFLA_VF_MIRROR]) {
 		err = -EOPNOTSUPP;
 		if (ops->ndo_set_vf_mirror)
 			err = ops->ndo_set_vf_mirror(dev, tb[IFLA_VF_MIRROR]);
