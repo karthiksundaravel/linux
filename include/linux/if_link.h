@@ -30,5 +30,4 @@ struct ifla_vf_info {
 	__u32 trusted;
 	__be16 vlan_proto;
 };
-
 #endif /* _LINUX_IF_LINK_H */
